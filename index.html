@@ -1,0 +1,552 @@
+<!DOCTYPE html>қ
+<!DOCTYPE html>
+<html lang="kk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Мал қарау</title>
+    <link rel="icon" type="image/jpeg" href="data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/4QAiRXhpZgAATU0AKgAAAAgAAQESAAMAAAABAAEAAAAAAAD/4gIoSUNDX1BST0ZJTEUAAQEAAAIYAAAAAAIQAABtbnRyUkdCIFhZWiAHHz ... (суреттің ұзын кодын үзіліссіз бір жолға жазу керек)">
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet-rotate@0.2.8/dist/leaflet-rotate.js"></script>
+</head>
+  
+  <style>
+    body { margin: 0; padding: 0; font-family: sans-serif; display: flex; flex-direction: column; height: 100vh; }
+    #map { flex: 1; width: 100%; }
+    
+    #panel { 
+      background: #181818; color: white; padding: 6px 8px;
+      display: flex; flex-direction: column; gap: 4px; max-height: 38vh; overflow-y: auto;
+    }
+    .row { display: flex; gap: 4px; width: 100%; }
+    input, select, button {
+      padding: 5px 6px; border-radius: 4px; border: 1px solid #444;
+      background: #2a2a2a; color: white; font-size: 11px;
+    }
+    input { flex: 1; }
+    button { background: #007bff; font-weight: bold; cursor: pointer; border: none; }
+    button.btn-green { background: #28a745; }
+    button.btn-orange { background: #fd7e14; }
+    button.btn-red { background: #dc3545; }
+    button.btn-gray { background: #6c757d; }
+    button.btn-yellow { background: #ffc107; color: black; }
+    
+    .form-group {
+      background: #252525; padding: 4px 6px; border-radius: 4px;
+      display: flex; flex-direction: column; gap: 3px;
+    }
+    .title { font-size: 10px; color: #aaa; font-weight: bold; }
+    #animalList, #farmList, #pointList { display: flex; flex-direction: column; gap: 2px; }
+    .animal-item, .farm-item, .point-item {
+      display: flex; justify-content: space-between; align-items: center;
+      background: #222; padding: 3px 6px; border-radius: 3px; font-size: 11px;
+    }
+    .horse-marker, .person-marker, .farm-marker {
+      font-size: 22px; text-align: center; line-height: 22px;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));
+    }
+    .history-dot {
+      width: 10px; height: 10px; background-color: #007bff;
+      border: 2px solid white; border-radius: 50%; box-shadow: 0 0 3px rgba(0,0,0,0.5);
+    }
+    .popup-btn {
+      display: block; width: 100%; margin-top: 3px; padding: 4px;
+      background: #28a745; color: white; border: none; border-radius: 3px; cursor: pointer; font-size: 11px;
+    }
+    .farm-tooltip {
+      background: rgba(0, 0, 0, 0.75);
+      border: 1px solid #ffc107;
+      color: #ffc107;
+      font-weight: bold;
+      font-size: 12px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.4);
+    }
+  </style>
+</head>
+<body>
+
+  <div id="map"></div>
+
+  <div id="panel">
+    <div id="mainView">
+      <div class="row">
+        <button style="flex:1" onclick="switchLayer('osm')">Схема</button>
+        <button class="btn-green" style="flex:1" onclick="switchLayer('googleSat')">Спутник</button>
+        <button class="btn-orange" style="flex:1" onclick="getMyLocation()">📍 Менің орным</button>
+      </div>
+
+      <div class="row">
+        <input type="text" id="searchInput" placeholder="Іздеу: 48.019, 66.923" />
+        <button class="btn-yellow" onclick="searchByCoords()">Іздеу</button>
+      </div>
+
+      <div class="form-group">
+        <div class="row">
+          <input type="text" id="farmName" placeholder="Қожалық аты" />
+          <input type="text" id="farmCoords" placeholder="Координат" />
+          <button class="btn-green" onclick="addFarmManual()">Қосу</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div class="row">
+          <input type="text" id="animalName" placeholder="Мал аты" />
+          <input type="text" id="animalId" placeholder="ID" style="max-width: 45px;" />
+          <input type="text" id="coordsInput" placeholder="Координат" />
+          <button class="btn-green" onclick="addOrUpdateManual()">Қосу</button>
+        </div>
+        <div class="row">
+          <button class="btn-red" style="width:100%; padding:3px;" onclick="showAllMarkers()">Барлық малдың орнын көру (X)</button>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <div id="animalList"></div>
+        <div id="farmList" style="margin-top: 2px;"></div>
+      </div>
+    </div>
+
+    <!-- Баптаулар терезесі -->
+    <div id="detailView" style="display: none;">
+      <div class="row" style="margin-bottom: 3px;">
+        <button class="btn-gray" style="flex:1" onclick="backToMain()">⬅️ Тізімге қайту</button>
+      </div>
+      <div class="form-group">
+        <div class="title" id="detailTitle">Баптаулар</div>
+        <div class="row">
+          <input type="text" id="editNameInput" placeholder="Жаңа аты" />
+          <input type="text" id="editIdInput" placeholder="ID" style="max-width: 50px;" />
+          <button class="btn-yellow" onclick="saveAnimalInfo()">Сақтау</button>
+        </div>
+        <div class="row">
+          <input type="text" id="detailCoordsInput" placeholder="Координат қосу" />
+          <button class="btn-green" onclick="addCoordToSelected()">Кіргізу</button>
+        </div>
+        <div style="font-size: 10px; color: #aaa; margin-top: 2px;">Тарих (Макс 20 нүкте):</div>
+        <div id="pointList" style="max-height: 8vh; overflow-y: auto;"></div>
+      </div>
+    </div>
+
+    <div id="status" style="font-size: 9px; text-align: center; color: #bbb;">Мәртебе: Дайын</div>
+  </div>
+
+  <script>
+    var map = L.map('map', {
+      center: [48.0196, 66.9237],
+      zoom: 6,
+      rotate: true,
+      touchRotate: true
+    });
+
+    var osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+    var googleSatLayer = L.tileLayer('https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}', { maxZoom: 20 });
+
+    function switchLayer(type) {
+      if (type === 'osm') {
+        map.removeLayer(googleSatLayer);
+        osmLayer.addTo(map);
+      } else {
+        map.removeLayer(osmLayer);
+        googleSatLayer.addTo(map);
+      }
+    }
+
+    var animals = {};
+    var farms = {};
+    var activePathLine = null;
+    var distanceLine = null;
+    var userLocationMarker = null;
+    var selectedPinMarker = null;
+    var historyDotMarkers = [];
+    var farmMarkers = [];
+    var selectedAnimalName = null;
+
+    map.on('movestart zoomstart', function() {
+      if (activePathLine) activePathLine.setStyle({ opacity: 0 });
+      if (distanceLine) distanceLine.setStyle({ opacity: 0 });
+    });
+
+    map.on('moveend zoomend', function() {
+      if (activePathLine) activePathLine.setStyle({ opacity: 0.9 });
+      if (distanceLine) distanceLine.setStyle({ opacity: 0.9 });
+    });
+
+    function addFarmManual() {
+      var name = document.getElementById('farmName').value.trim();
+      var coordsText = document.getElementById('farmCoords').value.trim();
+      if (!name || !coordsText) return;
+      var parts = coordsText.split(',');
+      if (parts.length < 2) return;
+      var lat = parseFloat(parts[0]);
+      var lon = parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon)) return;
+
+      farms[name] = { lat: lat, lon: lon, active: true };
+      saveFarmsToStorage();
+      redrawFarms();
+      updateUIList();
+      document.getElementById('farmName').value = "";
+      document.getElementById('farmCoords').value = "";
+    }
+
+    function saveFarmsToStorage() {
+      localStorage.setItem('my_farms_data', JSON.stringify(farms));
+    }
+
+    function loadFarmsFromStorage() {
+      var saved = localStorage.getItem('my_farms_data');
+      if (saved) {
+        try {
+          farms = JSON.parse(saved);
+          for (var name in farms) {
+            if (farms[name].active === undefined) farms[name].active = true;
+          }
+          redrawFarms();
+        } catch(e) { console.error(e); }
+      }
+    }
+
+    function redrawFarms() {
+      farmMarkers.forEach(function(m) { map.removeLayer(m); });
+      farmMarkers = [];
+
+      for (var name in farms) {
+        var farm = farms[name];
+        if (farm.active) {
+          var farmIcon = L.divIcon({
+            className: 'custom-farm-icon',
+            html: '<div class="farm-marker">🏠</div>',
+            iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -13]
+          });
+          var marker = L.marker([farm.lat, farm.lon], { icon: farmIcon }).addTo(map)
+            .bindPopup("<b>🏠 Қожалық: " + name + "</b>");
+          
+          marker.bindTooltip("🏠 " + name, {
+            permanent: true,
+            direction: 'bottom',
+            className: 'farm-tooltip',
+            offset: [0, 2]
+          });
+
+          farmMarkers.push(marker);
+        }
+      }
+    }
+
+    function toggleFarmActive(name) {
+      farms[name].active = !farms[name].active;
+      saveFarmsToStorage();
+      redrawFarms();
+      updateUIList();
+    }
+
+    function searchByCoords() {
+      var query = document.getElementById('searchInput').value.trim();
+      if (!query) return;
+      var parts = query.split(',');
+      if (parts.length < 2) return;
+      var lat = parseFloat(parts[0]);
+      var lon = parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon)) return;
+      showPinAt(lat, lon, "🔍 Ізделген жер");
+      document.getElementById('searchInput').value = "";
+    }
+
+    function showPinAt(lat, lon, titleText) {
+      if (selectedPinMarker) map.removeLayer(selectedPinMarker);
+      if (distanceLine) { map.removeLayer(distanceLine); distanceLine = null; }
+
+      var popupContent = '<div style="font-size:11px;"><b>' + titleText + '</b><br><b>Жылқыға қашықтық:</b><br>';
+      var hasActive = false;
+
+      for (var name in animals) {
+        if (animals[name].active && animals[name].history.length > 0) {
+          hasActive = true;
+          popupContent += '<button class="popup-btn" onclick="measureDistanceTo(\'' + name + '\', ' + lat + ', ' + lon + ')">🐴 ' + name + '</button>';
+        }
+      }
+
+      if (!hasActive) popupContent += '<span style="color:#888;">Активный мал жоқ</span>';
+      popupContent += '</div>';
+
+      selectedPinMarker = L.marker([lat, lon]).addTo(map).bindPopup(popupContent).openPopup();
+      map.setView([lat, lon], 14);
+    }
+
+    function getMyLocation() {
+      if (!navigator.geolocation) return;
+      document.getElementById('status').innerText = "Орныңыз анықталуда...";
+      navigator.geolocation.getCurrentPosition(
+        function(position) {
+          showPinAt(position.coords.latitude, position.coords.longitude, "🧍 Сіздің орныңыз");
+        },
+        function(error) { alert("Геолокация қателігі"); },
+        { enableHighAccuracy: true }
+      );
+    }
+
+    map.on('click', function(e) {
+      showPinAt(e.latlng.lat, e.latlng.lng, "📍 Таңдалған жер");
+    });
+
+    function measureDistanceTo(name, fromLat, fromLon) {
+      var animal = animals[name];
+      if (!animal || animal.history.length === 0) return;
+      var lastPoint = animal.history[animal.history.length - 1];
+      var fromPoint = L.latLng(fromLat, fromLon);
+      var toPoint = L.latLng(lastPoint[0], lastPoint[1]);
+      var dist = fromPoint.distanceTo(toPoint);
+      var distText = dist > 1000 ? (dist / 1000).toFixed(2) + " км" : Math.round(dist) + " метр";
+
+      if (distanceLine) map.removeLayer(distanceLine);
+      distanceLine = L.polyline([[fromLat, fromLon], lastPoint], { color: '#ff4136', weight: 4, dashArray: '4, 8' }).addTo(map);
+      document.getElementById('status').innerText = name + ' малға дейінгі қашықтық: ' + distText;
+    }
+
+    function loadFromStorage() {
+      var saved = localStorage.getItem('my_animals_data_v2');
+      if (saved) {
+        try {
+          animals = JSON.parse(saved);
+          for (var name in animals) {
+            if (animals[name].active === undefined) animals[name].active = true;
+            if (animals[name].id === undefined) animals[name].id = "";
+          }
+          redrawAllMarkers();
+          updateUIList();
+        } catch(e) { console.error(e); }
+      }
+    }
+
+    function saveToStorage() {
+      var dataToSave = {};
+      for (var name in animals) {
+        dataToSave[name] = { id: animals[name].id || "", history: animals[name].history, active: animals[name].active !== undefined ? animals[name].active : true };
+      }
+      localStorage.setItem('my_animals_data_v2', JSON.stringify(dataToSave));
+    }
+
+    function addOrUpdateManual() {
+      var name = document.getElementById('animalName').value.trim();
+      var animalId = document.getElementById('animalId').value.trim();
+      var coordsText = document.getElementById('coordsInput').value.trim();
+      if (!name || !coordsText) return;
+      var parts = coordsText.split(',');
+      if (parts.length < 2) return;
+      processPoint(name, parseFloat(parts[0]), parseFloat(parts[1]), animalId);
+      document.getElementById('animalName').value = "";
+      document.getElementById('animalId').value = "";
+      document.getElementById('coordsInput').value = "";
+    }
+
+    function addCoordToSelected() {
+      if (!selectedAnimalName) return;
+      var coordsText = document.getElementById('detailCoordsInput').value.trim();
+      if (!coordsText) return;
+      var parts = coordsText.split(',');
+      if (parts.length < 2) return;
+      var lat = parseFloat(parts[0]);
+      var lon = parseFloat(parts[1]);
+      if (isNaN(lat) || isNaN(lon)) return;
+
+      processPoint(selectedAnimalName, lat, lon);
+      document.getElementById('detailCoordsInput').value = "";
+      openDetailView(selectedAnimalName);
+    }
+
+    function processPoint(name, lat, lon, id) {
+      if (!id) id = "";
+      if (!animals[name]) animals[name] = { id: id, history: [], active: true, marker: null };
+      if (id) animals[name].id = id;
+      animals[name].history.push([lat, lon]);
+      if (animals[name].history.length > 20) animals[name].history.shift();
+      saveToStorage();
+      
+      if (selectedAnimalName === name) {
+        showAnimalHistory(name);
+      } else {
+        redrawAllMarkers();
+      }
+      updateUIList();
+      map.setView([lat, lon], 15);
+    }
+
+    function createHorseIcon(isActive) {
+      return L.divIcon({
+        className: 'custom-horse-icon',
+        html: '<div class="horse-marker" style="opacity: ' + (isActive ? '1' : '0.4') + ';">🐴</div>',
+        iconSize: [26, 26], iconAnchor: [13, 13], popupAnchor: [0, -13]
+      });
+    }
+
+    function createDotIcon() {
+      return L.divIcon({
+        className: 'custom-dot-icon', html: '<div class="history-dot"></div>',
+        iconSize: [10, 10], iconAnchor: [5, 5], popupAnchor: [0, -5]
+      });
+    }
+
+    function clearHistoryDots() {
+      historyDotMarkers.forEach(function(dot) { map.removeLayer(dot); });
+      historyDotMarkers = [];
+    }
+
+    function redrawAllMarkers() {
+      for (var name in animals) {
+        if (animals[name].marker) { map.removeLayer(animals[name].marker); animals[name].marker = null; }
+      }
+      if (activePathLine) { map.removeLayer(activePathLine); activePathLine = null; }
+      clearHistoryDots();
+      redrawFarms();
+
+      // Басты бетте тек соңғы нүктелер (жылқы смайлигі) ғана тұрады, жол сызылмайды
+      for (var name in animals) {
+        var animal = animals[name];
+        if (animal.active && animal.history.length > 0) {
+          var lastPoint = animal.history[animal.history.length - 1];
+          var marker = L.marker(lastPoint, { icon: createHorseIcon(true) }).addTo(map)
+            .bindPopup("<b>🐴 " + name + "</b>");
+          marker.on('click', (function(n) { return function() { openDetailView(n); }; })(name));
+          animal.marker = marker;
+        }
+      }
+    }
+
+    function updateUIList() {
+      var listDiv = document.getElementById('animalList');
+      listDiv.innerHTML = "<span style='font-size:10px; color:#aaa;'>Малдар:</span>";
+      for (var name in animals) {
+        var item = document.createElement('div');
+        item.className = 'animal-item';
+        item.innerHTML = '<span style="cursor:pointer; flex:1;" onclick="openDetailView(\'' + name + '\')"><b>🐴 ' + name + '</b></span><button class="btn-green" style="padding:2px 6px; font-size:10px;" onclick="openDetailView(\'' + name + '\')">Баптау</button>';
+        listDiv.appendChild(item);
+      }
+
+      var farmDiv = document.getElementById('farmList');
+      farmDiv.innerHTML = "<span style='font-size:10px; color:#aaa;'>Қожалықтар:</span>";
+      for (var name in farms) {
+        var fItem = document.createElement('div');
+        fItem.className = 'farm-item';
+        var statusColor = farms[name].active ? "white" : "#888";
+        fItem.innerHTML = '<span style="color:' + statusColor + ';">🏠 ' + name + '</span><button class="btn-orange" style="padding:2px 6px; font-size:10px;" onclick="toggleFarmActive(\'' + name + '\')">' + (farms[name].active ? 'Жасыру' : 'Қосу') + '</button>';
+        farmDiv.appendChild(fItem);
+      }
+    }
+
+    function openDetailView(name) {
+      selectedAnimalName = name;
+      showAnimalHistory(name);
+      document.getElementById('mainView').style.display = 'none';
+      document.getElementById('detailView').style.display = 'block';
+      document.getElementById('detailTitle').innerText = "🐴 " + name + " - Баптаулар";
+      document.getElementById('editNameInput').value = name;
+      document.getElementById('editIdInput').value = animals[name].id || "";
+
+      renderPointList(name);
+    }
+
+    function renderPointList(name) {
+      var pointListDiv = document.getElementById('pointList');
+      pointListDiv.innerHTML = "";
+      var hist = animals[name].history;
+      
+      for (var i = hist.length - 1; i >= 0; i--) {
+        var pt = hist[i];
+        var pItem = document.createElement('div');
+        pItem.className = 'point-item';
+        pItem.innerHTML = '<span>📍 ' + pt[0].toFixed(4) + ', ' + pt[1].toFixed(4) + '</span><button class="btn-red" style="padding:1px 4px; font-size:9px;" onclick="deletePoint(\'' + name + '\', ' + i + ')">Жою</button>';
+        pointListDiv.appendChild(pItem);
+      }
+    }
+
+    // Тек жеке баптау терезесіне кіргенде ғана сызық пен көк нүктелер шығады
+    function showAnimalHistory(name) {
+      for (var k in animals) {
+        if (animals[k].marker) { map.removeLayer(animals[k].marker); animals[k].marker = null; }
+      }
+      if (activePathLine) { map.removeLayer(activePathLine); activePathLine = null; }
+      clearHistoryDots();
+      redrawFarms();
+
+      var animal = animals[name];
+      if (!animal || animal.history.length === 0) return;
+
+      activePathLine = L.polyline(animal.history, { color: '#ffc107', weight: 4, dashArray: '6, 8' }).addTo(map);
+
+      var hist = animal.history;
+      for (var i = 0; i < hist.length; i++) {
+        var pt = hist[i];
+        var isLast = (i === hist.length - 1);
+
+        if (!isLast) {
+          var dotMarker = L.marker(pt, { icon: createDotIcon() }).addTo(map)
+            .bindPopup("<b>🐴 " + name + " (Өткен нүкте)</b><br>Координат: " + pt[0].toFixed(5) + ", " + pt[1].toFixed(5));
+          historyDotMarkers.push(dotMarker);
+        } else {
+          var marker = L.marker(pt, { icon: createHorseIcon(true) }).addTo(map)
+            .bindPopup("<b>🐴 " + name + "</b>").openPopup();
+          animal.marker = marker;
+          map.setView(pt, 15);
+        }
+      }
+    }
+
+    function saveAnimalInfo() {
+      var newName = document.getElementById('editNameInput').value.trim();
+      var newId = document.getElementById('editIdInput').value.trim();
+      if (!newName) return;
+      if (newName !== selectedAnimalName && animals[newName]) {
+        alert("Бұл ат бар!");
+        return;
+      }
+      if (newName !== selectedAnimalName) {
+        animals[newName] = animals[selectedAnimalName];
+        delete animals[selectedAnimalName];
+        selectedAnimalName = newName;
+      }
+      animals[selectedAnimalName].id = newId;
+      saveToStorage();
+      redrawAllMarkers();
+      updateUIList();
+      openDetailView(selectedAnimalName);
+    }
+
+    function deletePoint(name, index) {
+      if (confirm("Өшіресіз бе?")) {
+        animals[name].history.splice(index, 1);
+        saveToStorage();
+        
+        if (animals[name].history.length === 0) {
+          if (activePathLine) { map.removeLayer(activePathLine); activePathLine = null; }
+          backToMain();
+        } else {
+          showAnimalHistory(name);
+          renderPointList(name);
+        }
+        updateUIList();
+      }
+    }
+
+    function backToMain() {
+      selectedAnimalName = null;
+      document.getElementById('detailView').style.display = 'none';
+      document.getElementById('mainView').style.display = 'block';
+      showAllMarkers();
+    }
+
+    function showAllMarkers() {
+      if (activePathLine) { map.removeLayer(activePathLine); activePathLine = null; }
+      if (distanceLine) { map.removeLayer(distanceLine); distanceLine = null; }
+      if (selectedPinMarker) { map.removeLayer(selectedPinMarker); selectedPinMarker = null; }
+      redrawAllMarkers();
+    }
+
+    loadFromStorage();
+    loadFarmsFromStorage();
+  </script>
+</body>
+</html>
